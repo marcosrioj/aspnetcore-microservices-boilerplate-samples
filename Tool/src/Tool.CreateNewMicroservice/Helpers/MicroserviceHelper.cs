@@ -16,11 +16,13 @@ namespace Tool.CreateNewMicroservice.Helpers
             var solutionPath = GetSolutionPath();
             var microserviceBasePath = $"{solutionPath}{Path.DirectorySeparatorChar}{microserviceBaseProjectName}";
             var newMicroserviceBasePath = $"{solutionPath}{Path.DirectorySeparatorChar}{projectName}";
+            var port = GetNewLocalWebPort(solutionPath);
 
             CopyAndPasteMicroserviceBaseProjectFolder(microserviceBasePath, newMicroserviceBasePath);
             RenameFolders(newMicroserviceBasePath, microserviceBaseProjectName, projectName);
             RenameFiles(newMicroserviceBasePath, microserviceBaseProjectName, projectName);
             ReplaceTextWithinFiles(newMicroserviceBasePath, microserviceBaseProjectName, projectName);
+            ReplacePortWebProjects(newMicroserviceBasePath, port, projectName);
             AddSharedDetails(projectName);
 
             if (addProjectsToTheMainSolution)
@@ -116,6 +118,67 @@ namespace Tool.CreateNewMicroservice.Helpers
             {
                 ReplaceTextWithinFiles(@$"{si.Parent.FullName}{Path.DirectorySeparatorChar}{si.Name}", source, dest);
             }
+        }
+
+        static void ReplacePortWebProjects(string newMicroserviceBasePath, int port, string projectName)
+        {
+            var microserviceBaseProjectDefaultPort = 5000;
+            string[] filesPath = Directory
+                .GetFiles(newMicroserviceBasePath, "*.json", SearchOption.AllDirectories)
+                .Where(f => f.Contains("appsettings.json") || f.Contains("launchSettings.json"))
+                .ToArray();
+
+            foreach (var filePath in filesPath)
+            {
+                var reader = new StreamReader(filePath, Encoding.Default);
+                string content = reader.ReadToEnd();
+                reader.Close();
+
+                content = Regex.Replace(content, $":{microserviceBaseProjectDefaultPort}", $":{port}");
+
+                var writer = new StreamWriter(filePath);
+                writer.Write(content);
+                writer.Close();
+            }
+        }
+
+        static int GetNewLocalWebPort(string path)
+        {
+            var port = 5001;
+            var launchSettingsPattern = $"**/appsettings.json";
+            var appsettingsPattern = $"**/appsettings.json";
+
+            string[] filesPath = Directory
+                .GetFiles(path, "*.json", SearchOption.AllDirectories)
+                .Where(f => f.Contains("appsettings.json") || f.Contains("launchSettings.json"))
+                .ToArray();
+
+            var isPortBeingUsed = IsPortBeingUsed(filesPath, port);
+
+            while (isPortBeingUsed)
+            {
+                port = port + 1;
+                isPortBeingUsed = IsPortBeingUsed(filesPath, port);
+            }
+
+            return port;
+        }
+
+        static bool IsPortBeingUsed(string[] filesPath, int port)
+        {
+            foreach (var filePath in filesPath)
+            {
+                var reader = new StreamReader(filePath, Encoding.Default);
+                string content = reader.ReadToEnd();
+                reader.Close();
+
+                if (content.Contains($":{port}"))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         static void AddSharedDetails(string projectName)
