@@ -1,0 +1,77 @@
+﻿using System;
+using System.Text;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
+using Microsoft.IdentityModel.Tokens;
+using Abp.AspNetCore;
+using Abp.AspNetCore.Configuration;
+using Abp.AspNetCore.SignalR;
+using Abp.Modules;
+using Abp.Reflection.Extensions;
+using Abp.Zero.Configuration;
+using IdentityServer.Authentication.JwtBearer;
+using IdentityServer.Configuration;
+using Shared.EntityFrameworkCore;
+using Microsoft.AspNetCore.Mvc.ApplicationParts;
+using Shared;
+
+namespace IdentityServer
+{
+    [DependsOn(
+         typeof(IdentityServerApplicationModule),
+         typeof(SharedEntityFrameworkModule),
+         typeof(AbpAspNetCoreModule)
+        ,typeof(AbpAspNetCoreSignalRModule)
+     )]
+    public class IdentityServerWebCoreModule : AbpModule
+    {
+        private readonly IWebHostEnvironment _env;
+        private readonly IConfigurationRoot _appConfiguration;
+
+        public IdentityServerWebCoreModule(IWebHostEnvironment env)
+        {
+            _env = env;
+            _appConfiguration = env.GetAppConfiguration();
+        }
+
+        public override void PreInitialize()
+        {
+            Configuration.DefaultNameOrConnectionString = _appConfiguration.GetConnectionString(
+                SharedConsts.SharedConnectionStringName
+            );
+
+            // Use database for language management
+            Configuration.Modules.Zero().LanguageManagement.EnableDbLocalization();
+
+            Configuration.Modules.AbpAspNetCore()
+                 .CreateControllersForAppServices(
+                     typeof(IdentityServerApplicationModule).GetAssembly()
+                 );
+
+            ConfigureTokenAuth();
+        }
+
+        private void ConfigureTokenAuth()
+        {
+            IocManager.Register<TokenAuthConfiguration>();
+            var tokenAuthConfig = IocManager.Resolve<TokenAuthConfiguration>();
+
+            tokenAuthConfig.SecurityKey = new SymmetricSecurityKey(Encoding.ASCII.GetBytes(_appConfiguration["Authentication:JwtBearer:SecurityKey"]));
+            tokenAuthConfig.Issuer = _appConfiguration["Authentication:JwtBearer:Issuer"];
+            tokenAuthConfig.Audience = _appConfiguration["Authentication:JwtBearer:Audience"];
+            tokenAuthConfig.SigningCredentials = new SigningCredentials(tokenAuthConfig.SecurityKey, SecurityAlgorithms.HmacSha256);
+            tokenAuthConfig.Expiration = TimeSpan.FromDays(1);
+        }
+
+        public override void Initialize()
+        {
+            IocManager.RegisterAssemblyByConvention(typeof(IdentityServerWebCoreModule).GetAssembly());
+        }
+
+        public override void PostInitialize()
+        {
+            IocManager.Resolve<ApplicationPartManager>()
+                .AddApplicationPartsIfNotAddedBefore(typeof(IdentityServerWebCoreModule).Assembly);
+        }
+    }
+}
